@@ -1,0 +1,1215 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>几何跳跃</title>
+    <style id="game-styles">
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #222;
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* Play UI */
+        #play-ui {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-stats {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 15, 30, 0.7);
+            padding: 10px 40px;
+            border-radius: 30px;
+            border: 1px solid rgba(74, 158, 255, 0.3);
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.2), inset 0 0 10px rgba(74, 158, 255, 0.1);
+            display: flex;
+            gap: 40px;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #timer-display,
+        #goal-display {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            white-space: nowrap;
+        }
+
+        /* Player Stats HUD */
+        #player-stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .stat-bar-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(10, 15, 30, 0.8);
+            padding: 8px 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(74, 158, 255, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .stat-label {
+            font-weight: bold;
+            font-size: 14px;
+            width: 25px;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .stat-bar-bg {
+            width: 150px;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stat-bar-fill.hp {
+            background: linear-gradient(90deg, #ff4d4d, #ff1a1a);
+            box-shadow: 0 0 10px rgba(255, 26, 26, 0.5);
+        }
+
+        .stat-bar-fill.mp {
+            background: linear-gradient(90deg, #4d94ff, #1a75ff);
+            box-shadow: 0 0 10px rgba(26, 117, 255, 0.5);
+        }
+
+        .stat-text {
+            font-size: 12px;
+            min-width: 60px;
+            text-align: right;
+            font-family: monospace;
+            color: #eee;
+        }
+
+        #timer-display.low-time {
+            color: #ff4a4a;
+            animation: pulse 0.5s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from {
+                transform: scale(1);
+            }
+
+            to {
+                transform: scale(1.1);
+            }
+        }
+
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 15, 30, 0.85);
+            backdrop-filter: blur(15px);
+            padding: 30px 50px;
+            border-radius: 15px;
+            border: 1px solid rgba(74, 158, 255, 0.4);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(74, 158, 255, 0.2);
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            gap: 15px;
+            text-align: center;
+            z-index: 100;
+        }
+
+        #instructions h1 {
+            margin: 0 0 10px 0;
+            font-size: 32px;
+            color: #4a9eff;
+            text-shadow: 0 0 10px rgba(74, 158, 255, 0.3);
+        }
+
+        #instructions p {
+            margin: 5px 0;
+            color: #ccc;
+            font-size: 16px;
+        }
+
+        #btn-edit-mode {
+            margin-top: 20px;
+            padding: 10px 25px;
+            font-size: 16px;
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #btn-edit-mode:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 123, 255, 0.4);
+        }
+
+        #win-screen {
+            background: rgba(10, 15, 30, 0.95);
+            backdrop-filter: blur(15px);
+            padding: 50px 80px;
+            border-radius: 20px;
+            text-align: center;
+            border: 2px solid #4a9eff;
+            box-shadow: 0 0 40px rgba(74, 158, 255, 0.4), inset 0 0 20px rgba(74, 158, 255, 0.2);
+            pointer-events: auto;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #play-ui {
+            z-index: 5;
+            position: relative;
+            pointer-events: none;
+        }
+
+        button {
+            background: #444;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.2s;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #666;
+        }
+
+        button:active {
+            background: #888;
+        }
+
+        /* Editor UI */
+        #editor-ui {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #toolbar {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            pointer-events: auto;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .tool-btn {
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+
+        .tool-btn.active {
+            background: #007bff;
+            border-color: #0056b3;
+        }
+
+        .tool-btn.danger {
+            background: #dc3545;
+            border-color: #bd2130;
+        }
+
+        .separator {
+            width: 1px;
+            height: 20px;
+            background: #666;
+            margin: 0 5px;
+        }
+
+        #level-dashboard {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 200px;
+            background: rgba(0, 0, 0, 0.85);
+            border-left: 1px solid #555;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            z-index: 200;
+        }
+
+        #level-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .level-item {
+            background: #333;
+            padding: 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border: 1px solid #444;
+        }
+
+        .level-item:hover {
+            background: #444;
+        }
+
+        .level-item.active {
+            border-color: #007bff;
+            background: #222;
+        }
+
+        .dashboard-controls {
+            padding: 10px;
+            border-top: 1px solid #555;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        /* Settings Panel */
+        #level-settings-panel {
+            position: absolute;
+            top: 60px;
+            right: 210px;
+            /* Left of dashboard */
+            width: 200px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #555;
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+
+        #level-settings-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+
+        .setting-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .setting-group label {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .setting-group input {
+            width: 60px;
+            background: #222;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 2px 5px;
+        }
+
+        #btn-close-settings {
+            margin-top: 10px;
+            background: #444;
+        }
+
+        /* Blueprint Overlay */
+        #blueprint-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 20, 0.95);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            pointer-events: auto;
+        }
+
+        #blueprint-toolbar {
+            background: #1a1a2e;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            border-bottom: 2px solid #333;
+        }
+
+        #blueprint-toolbar h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #4a9eff;
+        }
+
+        #blueprint-canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        #blueprint-canvas-container:active {
+            cursor: grabbing;
+        }
+
+        #blueprintCanvas {
+            display: block;
+        }
+
+        /* Draggable levels from dashboard */
+        .level-item {
+            user-select: none;
+        }
+
+        .level-item[draggable="true"]:active {
+            opacity: 0.5;
+            background: #555;
+        }
+
+        /* UI Overlay & Stats */
+        #game-stats {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        #timer-display,
+        #goal-display {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        #timer-display.low-time {
+            color: #ff4444;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Shop UI */
+        #shop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        #shop-container {
+            width: 90%;
+            max-width: 1000px;
+            background: rgba(30, 30, 40, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        #shop-container h1 {
+            font-size: 48px;
+            margin: 0;
+            color: #4a9eff;
+            text-shadow: 0 0 20px rgba(74, 158, 255, 0.3);
+        }
+
+        #shop-container p {
+            color: #aaa;
+            margin-bottom: 40px;
+        }
+
+        #card-list {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            width: 220px;
+            height: 320px;
+            background: linear-gradient(135deg, #2a2a3a, #1a1a2a);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: #4a9eff;
+            box-shadow: 0 10px 30px rgba(74, 158, 255, 0.2);
+        }
+
+        .card.disabled {
+            opacity: 0.5;
+            filter: grayscale(1);
+            cursor: not-allowed;
+        }
+
+        .card-icon {
+            font-size: 50px;
+            margin: 20px 0;
+        }
+
+        .card-name {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .card-desc {
+            font-size: 14px;
+            color: #ccc;
+            line-height: 1.4;
+            flex: 1;
+        }
+
+        .card-cost {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-top: 15px;
+        }
+
+        #shop-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 20px;
+        }
+
+        #shop-balance {
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        #btn-next-level {
+            font-size: 18px;
+            padding: 12px 40px;
+            background: #4a9eff;
+            border-radius: 30px;
+        }
+
+        #btn-next-level:hover {
+            background: #357abd;
+        }
+
+        /* --- Editor Database Bar (Multi-Category Refined) --- */
+        #btn-expand-db {
+            position: fixed;
+            bottom: 0;
+            left: 20px;
+            z-index: 501;
+            background: rgba(74, 158, 255, 0.2);
+            border: 1px solid #4a9eff;
+            color: #4a9eff;
+            font-size: 11px;
+            padding: 8px 18px;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            transition: all 0.2s;
+        }
+
+        #btn-expand-db:hover {
+            background: #4a9eff;
+            color: #fff;
+            transform: translateY(-2px);
+        }
+
+        #editor-bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 200px;
+            /* Offset for dashboard width */
+            height: 210px;
+            /* Taller for vertical layout */
+            background: rgba(10, 10, 15, 0.98);
+            backdrop-filter: blur(30px);
+            border-top: 2px solid rgba(74, 158, 255, 0.4);
+            display: flex;
+            z-index: 500;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s;
+            pointer-events: auto;
+        }
+
+        #editor-ui.hidden #editor-bottom-bar,
+        #editor-bottom-bar.collapsed {
+            transform: translateY(100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Side Navigation */
+        .db-side-nav {
+            width: 120px;
+            background: rgba(255, 255, 255, 0.03);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 5px;
+        }
+
+        .db-nav-header {
+            font-size: 9px;
+            color: #4a9eff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            padding-left: 5px;
+            opacity: 0.6;
+        }
+
+        .db-nav-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: #aaa;
+            font-size: 12px;
+            text-align: left;
+            padding: 8px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 0;
+        }
+
+        .db-nav-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+        }
+
+        .db-nav-btn.active {
+            background: rgba(74, 158, 255, 0.2);
+            border-color: rgba(74, 158, 255, 0.4);
+            color: #4a9eff;
+            font-weight: bold;
+        }
+
+        .db-nav-btn.danger {
+            margin-top: auto;
+            color: #ff4a4a !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 15px;
+        }
+
+        .db-nav-btn.danger:hover {
+            background: rgba(255, 74, 74, 0.1);
+        }
+
+        /* Main Content Area */
+        .db-main-content {
+            flex: 1;
+            overflow-x: auto;
+            padding: 15px 20px;
+        }
+
+        .db-tab-pane {
+            display: none;
+            height: 100%;
+        }
+
+        .db-tab-pane.active {
+            display: block;
+        }
+
+        .db-grid {
+            display: flex;
+            gap: 15px;
+            align-items: flex-start;
+        }
+
+        /* Redesigned Card Item to match User screenshot */
+        .db-card-item {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            min-width: 100px;
+            height: 175px;
+            transition: all 0.2s ease;
+            overflow: hidden;
+        }
+
+        .db-card-item:hover {
+            border-color: #4a9eff;
+            background: rgba(15, 15, 30, 0.8);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .db-card-header {
+            background: rgba(74, 158, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 11px;
+            color: #888;
+            padding: 4px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .db-card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 5px;
+        }
+
+        .db-card-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .db-card-footer {
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .db-card-cost-input {
+            width: 100%;
+            background: #000;
+            border: 1px solid #333;
+            color: #ffd700;
+            font-size: 14px;
+            text-align: center;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .db-card-cost-input:focus {
+            border-color: #ffd700;
+        }
+
+        .db-card-id {
+            font-size: 9px;
+            color: #444;
+            font-family: monospace;
+        }
+
+        .db-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #444;
+            font-style: italic;
+            font-size: 14px;
+        }
+
+        /* --- Editor Properties Panel --- */
+        #editor-properties-panel {
+            position: fixed;
+            right: 210px;
+            /* Left of dashboard */
+            bottom: 20px;
+            width: 200px;
+            background: rgba(10, 10, 15, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(74, 158, 255, 0.4);
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 505;
+            pointer-events: auto;
+            transition: transform 0.3s ease, opacity 0.3s;
+            max-height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        #editor-properties-panel.hidden {
+            transform: translateX(100px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #editor-properties-panel .panel-header {
+            font-size: 11px;
+            color: #4a9eff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 5px;
+        }
+
+        .prop-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .trap-item {
+            cursor: pointer;
+            background: rgba(255, 74, 74, 0.05) !important;
+        }
+
+        .trap-item:hover {
+            background: rgba(255, 74, 74, 0.15) !important;
+            border-color: #ff4a4a !important;
+        }
+
+        .trap-item .db-card-header {
+            background: rgba(255, 74, 74, 0.2) !important;
+        }
+    </style>
+    <!-- style.css is now inlined above -->
+</head>
+
+<body>
+    <div id="ui-layer">
+        <div id="editor-ui" class="hidden">
+            <div id="toolbar">
+                <button id="tool-cursor" class="tool-btn active">选择</button>
+                <button id="tool-platform" class="tool-btn">平台</button>
+                <button id="tool-goal" class="tool-btn">目标</button>
+                <button id="tool-exit" class="tool-btn">出口</button>
+                <button id="tool-spawn" class="tool-btn">出生点</button>
+                <div class="separator"></div>
+                <button id="tool-item-hp" class="tool-btn" style="color: #ff4a4a;">生命球</button>
+                <button id="tool-item-mp" class="tool-btn" style="color: #4a9eff;">魔法球</button>
+                <button id="tool-trigger" class="tool-btn" style="color: #ff8800;">🎯触发器</button>
+                <div class="separator"></div>
+                <button id="tool-delete" class="tool-btn danger">删除</button>
+                <div class="separator"></div>
+                <label><input type="checkbox" id="grid-snap"> 吸附</label>
+                <button id="btn-settings" class="tool-btn">设置</button>
+                <button id="btn-blueprint" class="tool-btn" style="background: #2a2a5a;">蓝图</button>
+            </div>
+
+            <div id="level-settings-panel" class="hidden">
+                <h3>关卡与物理设置</h3>
+                <div class="setting-group">
+                    <label>重力:</label>
+                    <input type="number" id="set-gravity" step="0.1">
+                </div>
+                <div class="setting-group">
+                    <label>跳跃力度:</label>
+                    <input type="number" id="set-jump" step="1">
+                </div>
+                <div class="setting-group">
+                    <label>移动速度:</label>
+                    <input type="number" id="set-speed" step="0.5">
+                </div>
+                <div class="setting-group">
+                    <label>世界宽度:</label>
+                    <input type="number" id="set-width" step="100">
+                </div>
+                <div class="setting-group">
+                    <label>世界高度:</label>
+                    <input type="number" id="set-height" step="100">
+                </div>
+
+                <hr>
+                <h4>Roguelike 设置</h4>
+                <div class="setting-group">
+                    <label>最大生命 (HP):</label>
+                    <input type="number" id="set-max-hp" value="100">
+                </div>
+                <div class="setting-group">
+                    <label>最大魔法 (MP):</label>
+                    <input type="number" id="set-max-mp" value="100">
+                </div>
+                <div class="setting-group">
+                    <label>平台消耗 (MP):</label>
+                    <input type="number" id="set-platform-cost" value="10">
+                </div>
+                <div class="setting-group">
+                    <label>掉落伤害 (HP):</label>
+                    <input type="number" id="set-fall-damage" value="20">
+                </div>
+                <div class="setting-group">
+                    <label>MP回复速度:</label>
+                    <input type="number" id="set-mp-regen" value="0.1" step="0.1">
+                </div>
+
+                <hr>
+                <h4>关卡条件</h4>
+                <div class="setting-group">
+                    <label>限时 (秒, 0为无限):</label>
+                    <input type="number" id="set-time-limit" step="1" min="0">
+                </div>
+                <div class="setting-group">
+                    <label>需要目标数:</label>
+                    <input type="number" id="set-target-count" step="1" min="1">
+                </div>
+
+                <hr>
+                <h4>关卡蓝图 (流程控制)</h4>
+                <div class="setting-group">
+                    <label>下一关类型</label>
+                    <select id="set-next-type">
+                        <option value="linear">线性 (下一关)</option>
+                        <option value="random">随机 (权重抽取)</option>
+                        <option value="branch">分支 (逻辑跳转)</option>
+                    </select>
+                </div>
+                <div id="blueprint-targets-area">
+                    <!-- Targets with weights will follow -->
+                </div>
+                <button id="btn-close-settings">关闭</button>
+            </div>
+
+            <div id="editor-bottom-bar">
+                <div class="db-side-nav">
+                    <div class="db-nav-header">数据库控制</div>
+                    <button class="db-nav-btn active" data-tab="cards">肉鸽卡片</button>
+                    <button class="db-nav-btn" data-tab="traps">陷阱/机关</button>
+                    <button class="db-nav-btn" data-tab="enemies">敌人/怪物</button>
+                    <button id="btn-collapse-db" class="db-nav-btn danger">收缩面板</button>
+                </div>
+                <div class="db-main-content">
+                    <div id="tab-cards" class="db-tab-pane active">
+                        <div id="card-cost-list" class="db-grid">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+                    <div id="tab-traps" class="db-tab-pane">
+                        <div class="db-grid">
+                            <div class="db-card-item trap-item" data-type="spikes">
+                                <div class="db-card-header">红色地刺</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon">▲</span>
+                                </div>
+                            </div>
+                            <div class="db-card-item trap-item" data-type="laser">
+                                <div class="db-card-header">激光束</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon">⚡</span>
+                                </div>
+                            </div>
+                            <div class="db-card-item trap-item" data-type="jumppad">
+                                <div class="db-card-header" style="color: #00ffaa;">气流跳台</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon" style="color: #00ffaa;">🚀</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="tab-enemies" class="db-tab-pane">
+                        <div class="db-placeholder">预留：敌人种类 (即将到来...)</div>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-expand-db" class="hidden">显示数据库</button>
+
+            <div id="editor-properties-panel" class="hidden">
+                <div class="panel-header">对象属性</div>
+
+                <div id="platform-props" class="prop-group hidden">
+                    <div class="setting-group">
+                        <label>移动速度</label>
+                        <input type="number" id="prop-platform-speed" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>目标 X (相对)</label>
+                        <input type="number" id="prop-platform-tx" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>目标 Y (相对)</label>
+                        <input type="number" id="prop-platform-ty" value="0">
+                    </div>
+                    <div
+                        style="font-size: 10px; color: #aaa; margin-top: 5px; border-top: 1px solid #333; padding-top: 5px;">
+                        曲线参数 (配合使用变圆周)</div>
+                    <div class="setting-group">
+                        <label>X轴摆幅</label>
+                        <input type="number" id="prop-platform-oscX" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>Y轴摆幅</label>
+                        <input type="number" id="prop-platform-oscY" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>摆动速度</label>
+                        <input type="number" id="prop-platform-oscSpeed" value="0">
+                    </div>
+                </div>
+
+                <div id="jumppad-props" class="prop-group hidden">
+                    <div class="setting-group">
+                        <label>弹射力度 (越低跳越高)</label>
+                        <input type="number" id="prop-jumppad-force" value="-20">
+                    </div>
+                </div>
+
+                <div id="trap-props" class="prop-group hidden">
+                    <div class="setting-group">
+                        <label>伤害量</label>
+                        <input type="number" id="prop-trap-damage" value="20">
+                    </div>
+                    <div class="setting-group">
+                        <label>旋转</label>
+                        <button id="btn-rotate-trap" class="tool-btn">⟳ 旋转90°</button>
+                    </div>
+                    <div class="setting-group">
+                        <label>缩放</label>
+                        <input type="number" id="prop-trap-scale" value="1" step="0.1" min="0.1" max="5">
+                    </div>
+                    <div class="setting-group">
+                        <label>移动速度</label>
+                        <input type="number" id="prop-trap-speed" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>目标 X (相对)</label>
+                        <input type="number" id="prop-trap-tx" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>目标 Y (相对)</label>
+                        <input type="number" id="prop-trap-ty" value="0">
+                    </div>
+                    <div
+                        style="font-size: 10px; color: #aaa; margin-top: 5px; border-top: 1px solid #333; padding-top: 5px;">
+                        曲线参数 (配合使用变圆周)</div>
+                    <div class="setting-group">
+                        <label>X轴摆幅</label>
+                        <input type="number" id="prop-trap-oscX" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>Y轴摆幅</label>
+                        <input type="number" id="prop-trap-oscY" value="0">
+                    </div>
+                    <div class="setting-group">
+                        <label>摆动速度</label>
+                        <input type="number" id="prop-trap-oscSpeed" value="0">
+                    </div>
+                </div>
+                <div id="trigger-props" class="hidden">
+                    <div
+                        style="font-size: 11px; color: #ff8800; text-transform: uppercase; font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ff8800; padding-bottom: 5px;">
+                        🎯 触发器属性</div>
+                    <div class="setting-group">
+                        <label>仅触发一次</label>
+                        <input type="checkbox" id="prop-trigger-oneshot" checked>
+                    </div>
+                    <div
+                        style="font-size: 10px; color: #aaa; margin-top: 5px; border-top: 1px solid #333; padding-top: 5px;">
+                        绑定的陷阱</div>
+                    <div id="trigger-bindings-list" style="max-height: 120px; overflow-y: auto; margin: 5px 0;"></div>
+                    <button id="btn-add-binding"
+                        style="background: #ff8800; color: #000; font-weight: bold; width: 100%; padding: 5px; cursor: pointer; border: none; border-radius: 3px;">+
+                        点击陷阱添加绑定</button>
+                    <div id="binding-mode-hint" class="hidden"
+                        style="color: #ff8800; font-size: 11px; text-align: center; margin-top: 5px; animation: pulse 1s infinite;">
+                        请点击地图上的陷阱...</div>
+                </div>
+            </div>
+
+            <div id="level-dashboard">
+                <div id="level-list">
+                    <!-- Loaded dynamically -->
+                </div>
+                <div class="dashboard-controls">
+                    <button id="btn-new-level">新建关卡</button>
+                    <button id="btn-save-level">保存</button>
+                    <button id="btn-clear-level" style="background: #622;">清空当前关卡</button>
+                    <button id="btn-play-test">测试游玩</button>
+                    <button id="btn-export">导出关卡</button>
+                    <button id="btn-export-standalone" style="background: #2a5a2a;">导出独立游戏</button>
+                    <button id="btn-import">导入关卡</button>
+                    <input type="file" id="file-input" style="display:none" accept=".json">
+                </div>
+            </div>
+
+            <div id="blueprint-overlay" class="hidden">
+                <div id="blueprint-toolbar">
+                    <button id="btn-close-blueprint">返回编辑</button>
+                    <h2>关卡流程蓝图</h2>
+                    <span style="font-size: 12px; color: #aaa;">拖拽右侧关卡到此处 / 鼠标拖动背景平移</span>
+                </div>
+                <div id="blueprint-canvas-container">
+                    <canvas id="blueprintCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="play-ui">
+            <!-- Restored original HUD layout -->
+            <div id="player-stats">
+                <div class="stat-bar-container">
+                    <div class="stat-label">HP</div>
+                    <div class="stat-bar-bg">
+                        <div id="hp-bar-fill" class="stat-bar-fill hp"></div>
+                    </div>
+                    <div id="hp-text" class="stat-text">100/100</div>
+                </div>
+                <div class="stat-bar-container">
+                    <div class="stat-label">MP</div>
+                    <div class="stat-bar-bg">
+                        <div id="mp-bar-fill" class="stat-bar-fill mp"></div>
+                    </div>
+                    <div id="mp-text" class="stat-text">100/100</div>
+                </div>
+                <!-- Currency Integrated into restored layout -->
+                <div id="currency-display" class="stat-bar-container hidden">
+                    <div class="stat-label">⭐</div>
+                    <div id="currency-text" class="stat-text"
+                        style="text-align: left; font-weight: bold; color: #FFD700;">0</div>
+                </div>
+            </div>
+
+            <div id="game-stats" class="hidden">
+                <div id="goal-display">目标: 0 / 1</div>
+                <div id="timer-display" class="hidden">剩余时间: 30.0s</div>
+            </div>
+
+            <div id="shop-overlay" class="hidden">
+                <div id="shop-container">
+                    <h1>维度商店</h1>
+                    <p>花费星星来增强你的力量</p>
+                    <div id="card-list">
+                        <!-- Cards will be injected here -->
+                    </div>
+                    <div id="shop-footer">
+                        <div id="shop-balance">⭐<span id="shop-stars">0</span></div>
+                        <button id="btn-next-level">继续前进</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="instructions">
+                <h1>几何跳跃</h1>
+                <p>WASD / 空格键 移动与跳跃</p>
+                <p>鼠标点击 创建平台</p>
+                <p>收集 <span style="color: #FFD700;">▲</span> 然后到达 <span style="color: #00FF00;">▲</span></p>
+                <button id="btn-edit-mode">打开编辑器</button>
+            </div>
+            <button id="btn-stop-test" class="hidden"
+                style="position: absolute; top: 10px; left: 10px; z-index: 100;">停止测试</button>
+            <div id="win-screen" class="hidden">
+                <h1>关卡完成!</h1>
+                <button id="btn-win-next">下一关</button>
+                <button id="btn-restart">重新开始</button>
+            </div>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <script src="script.js?v=20260221"></script>
+</body>
+
+
+</html>
