@@ -896,20 +896,20 @@
                 <div class="separator"></div>
                 <button id="tool-delete" class="tool-btn danger">删除</button>
                 <div class="separator"></div>
-                <label><input type="checkbox" id="grid-snap"> 吸附</label>
-                <button id="btn-settings" class="tool-btn">设置</button>
-                <button id="btn-blueprint" class="tool-btn" style="background: #2a2a5a;">蓝图</button>
+                <label
+                    style="color: white; font-size: 14px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="grid-snap"> 吸附网格
+                </label>
             </div>
-
             <div id="level-settings-panel" class="hidden">
-                <h3>关卡与物理设置</h3>
+                <h3>关卡设置</h3>
                 <div class="setting-group">
-                    <label>重力:</label>
+                    <label>物理重力:</label>
                     <input type="number" id="set-gravity" step="0.1">
                 </div>
                 <div class="setting-group">
                     <label>跳跃力度:</label>
-                    <input type="number" id="set-jump" step="1">
+                    <input type="number" id="set-jump" step="0.5">
                 </div>
                 <div class="setting-group">
                     <label>移动速度:</label>
@@ -947,6 +947,14 @@
                     <input type="number" id="set-mp-regen" value="0.1" step="0.1">
                 </div>
 
+                <div class="setting-group">
+                    <label>关卡类型:</label>
+                    <select id="set-level-type">
+                        <option value="normal">普通关卡</option>
+                        <option value="shop">商店关卡</option>
+                    </select>
+                </div>
+
                 <hr>
                 <h4>关卡条件</h4>
                 <div class="setting-group">
@@ -979,6 +987,7 @@
                     <div class="db-nav-header">数据库控制</div>
                     <button class="db-nav-btn active" data-tab="cards">肉鸽卡片</button>
                     <button class="db-nav-btn" data-tab="traps">陷阱/机关</button>
+                    <button class="db-nav-btn" data-tab="facilities">特殊设施</button>
                     <button class="db-nav-btn" data-tab="enemies">敌人/怪物</button>
                     <button id="btn-collapse-db" class="db-nav-btn danger">收缩面板</button>
                 </div>
@@ -1013,12 +1022,46 @@
                     <div id="tab-enemies" class="db-tab-pane">
                         <div class="db-placeholder">预留：敌人种类 (即将到来...)</div>
                     </div>
+                    <div id="tab-facilities" class="db-tab-pane">
+                        <div class="db-grid">
+                            <div class="db-card-item facility-item" data-type="heal">
+                                <div class="db-card-header" style="color: #4aefff;">回复舱 (Heal)</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon" style="color: #4aefff;">🩸</span>
+                                </div>
+                            </div>
+                            <div class="db-card-item facility-item" data-type="player_upgrade">
+                                <div class="db-card-header" style="color: #ffaa00;">属性强化 (Up)</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon" style="color: #ffaa00;">⚔️</span>
+                                </div>
+                            </div>
+                            <div class="db-card-item facility-item" data-type="card_upgrade">
+                                <div class="db-card-header" style="color: #d666ff;">卡牌升级 (Card)</div>
+                                <div class="db-card-body">
+                                    <span class="db-card-icon" style="color: #d666ff;">🃏</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <button id="btn-expand-db" class="hidden">显示数据库</button>
 
+            <!-- Facility Properties Addition -->
             <div id="editor-properties-panel" class="hidden">
                 <div class="panel-header">对象属性</div>
+
+                <div id="facility-props" class="prop-group hidden">
+                    <div class="setting-group">
+                        <label>花费 (目标点)</label>
+                        <input type="number" id="prop-facility-cost" value="10">
+                    </div>
+                    <div class="setting-group">
+                        <label>提升数值/参数量</label>
+                        <input type="number" id="prop-facility-amount" value="1">
+                    </div>
+                </div>
 
                 <div id="platform-props" class="prop-group hidden">
                     <div class="setting-group">
@@ -1124,6 +1167,8 @@
                     <!-- Loaded dynamically -->
                 </div>
                 <div class="dashboard-controls">
+                    <button id="btn-settings">关卡设置</button>
+                    <button id="btn-blueprint">关卡流程</button>
                     <button id="btn-new-level">新建关卡</button>
                     <button id="btn-save-level">保存</button>
                     <button id="btn-clear-level" style="background: #622;">清空当前关卡</button>
@@ -1150,6 +1195,11 @@
         <div id="play-ui">
             <!-- Restored original HUD layout -->
             <div id="player-stats">
+                <div class="stat-bar-container" id="level-display" style="margin-bottom: 5px;">
+                    <div class="stat-label" style="color: #ffaa00;">LVL</div>
+                    <div id="level-text" class="stat-text"
+                        style="text-align: left; font-weight: bold; color: #ffaa00; font-size: 14px;">1</div>
+                </div>
                 <div class="stat-bar-container">
                     <div class="stat-label">HP</div>
                     <div class="stat-bar-bg">
@@ -1168,7 +1218,8 @@
                 <div id="currency-display" class="stat-bar-container hidden">
                     <div class="stat-label">⭐</div>
                     <div id="currency-text" class="stat-text"
-                        style="text-align: left; font-weight: bold; color: #FFD700;">0</div>
+                        style="text-align: left; font-weight: bold; color: #FFD700;">0
+                    </div>
                 </div>
             </div>
 
@@ -1208,7 +1259,7 @@
         </div>
     </div>
     <canvas id="gameCanvas"></canvas>
-    <script src="script.js?v=20260221"></script>
+    <script src="script.js"></script>
 </body>
 
 

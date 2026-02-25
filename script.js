@@ -636,7 +636,8 @@ class RunManager {
             mp: 100,
             maxHp: 100,
             maxMp: 100,
-            currency: 0
+            currency: 0,
+            deck: []
         };
         this.modifiers = {
             maxHpAdd: 0,
@@ -660,7 +661,8 @@ class RunManager {
             mp: 100,
             maxHp: 100,
             maxMp: 100,
-            currency: 10 // Start with some currency for testing
+            currency: 10, // Start with some currency for testing
+            deck: []
         };
         this.modifiers = {
             maxHpAdd: 0,
@@ -769,6 +771,11 @@ class RunManager {
             cardEl.onclick = () => {
                 if (this.currentStats.currency >= card.cost) {
                     this.currentStats.currency -= card.cost;
+
+                    // Create unlinked instance of card for leveling up
+                    const purchasedCard = { ...card, level: 1 };
+                    this.currentStats.deck.push(purchasedCard);
+
                     card.effect(this, card.value);
                     shopStars.textContent = this.currentStats.currency;
                     // Disable all cards after purchase? (One card per shop)
@@ -963,6 +970,7 @@ class LevelManager {
         if (traps) level.traps = JSON.parse(JSON.stringify(traps));
         if (jumppads) level.jumppads = JSON.parse(JSON.stringify(jumppads));
         if (this.game.currentLevelData.items) level.items = JSON.parse(JSON.stringify(this.game.currentLevelData.items));
+        if (this.game.currentLevelData.facilities) level.facilities = JSON.parse(JSON.stringify(this.game.currentLevelData.facilities));
         this.saveToStorage();
     }
 
@@ -1304,6 +1312,23 @@ class Editor {
             });
         });
 
+        // Facility Selection from UI
+        const facilityItems = document.querySelectorAll('.facility-item[data-type]');
+        facilityItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.tool = 'facility';
+                this.selectedFacilityType = item.getAttribute('data-type');
+                // Deselect others
+                facilityItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+
+                // Clear tool buttons
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            });
+        });
+
         // Clipboard for Copy/Paste
         this.clipboard = null;
         this.clipboardType = null;
@@ -1352,6 +1377,7 @@ class Editor {
             this.game.state = 'edit';
             playUI.classList.add('hidden');
             document.getElementById('player-stats').classList.add('hidden');
+            document.getElementById('instructions').classList.add('hidden');
             editorUI.classList.remove('hidden');
             updateDashboard();
             this.updateDatabaseUI();
@@ -1409,6 +1435,9 @@ class Editor {
 
         f.nextType = document.getElementById('set-next-type').value;
 
+        // Level Type (Normal vs Shop)
+        s.type = document.getElementById('set-level-type').value || 'normal';
+
         // Save immediately
         this.game.levelManager.saveCurrentLevelState(
             d.platforms, d.goals, d.exit, d.spawn, s, c, f, d.traps, d.triggers, d.jumppads
@@ -1446,6 +1475,9 @@ class Editor {
         document.getElementById('set-target-count').value = c.targetCount;
 
         document.getElementById('set-next-type').value = f.nextType;
+
+        // Level Type (Normal vs Shop)
+        document.getElementById('set-level-type').value = s.type || 'normal';
     }
 
     updatePropertiesUI() {
@@ -1472,6 +1504,8 @@ class Editor {
 
             const jumppadProps = document.getElementById('jumppad-props');
             if (jumppadProps) jumppadProps.classList.add('hidden');
+            const facilityProps = document.getElementById('facility-props');
+            if (facilityProps) facilityProps.classList.add('hidden');
 
             if (this.selectedType === 'trap') {
                 trapProps.classList.remove('hidden');
@@ -1550,10 +1584,30 @@ class Editor {
                 if (jumppadProps) jumppadProps.classList.remove('hidden');
 
                 const jumpEl = cloneAndReplace('prop-jumppad-force');
-                if (jumpEl) {
+                if (jumppadProps) {
                     jumpEl.value = this.selectedObject.jumpForce || -20;
                     jumpEl.addEventListener('change', (e) => {
                         this.selectedObject.jumpForce = parseFloat(e.target.value) || -20;
+                    });
+                }
+            } else if (this.selectedType === 'facility') {
+                trapProps.classList.add('hidden');
+                platformProps.classList.add('hidden');
+                document.getElementById('trigger-props').classList.add('hidden');
+                if (facilityProps) facilityProps.classList.remove('hidden');
+
+                const costEl = cloneAndReplace('prop-facility-cost');
+                if (costEl) {
+                    costEl.value = this.selectedObject.cost !== undefined ? this.selectedObject.cost : 10;
+                    costEl.addEventListener('change', (e) => {
+                        this.selectedObject.cost = Math.max(0, parseInt(e.target.value) || 0);
+                    });
+                }
+                const amountEl = cloneAndReplace('prop-facility-amount');
+                if (amountEl) {
+                    amountEl.value = this.selectedObject.amount !== undefined ? this.selectedObject.amount : 1;
+                    amountEl.addEventListener('change', (e) => {
+                        this.selectedObject.amount = Math.max(1, parseInt(e.target.value) || 1);
                     });
                 }
             } else {
@@ -1847,6 +1901,18 @@ class Editor {
                     }
                 }
 
+                // Check Facilities
+                if (!found && data.facilities) {
+                    for (let i = data.facilities.length - 1; i >= 0; i--) {
+                        const fac = data.facilities[i];
+                        if (this.worldX >= fac.x && this.worldX <= fac.x + fac.width &&
+                            this.worldY >= fac.y && this.worldY <= fac.y + fac.height) {
+                            found = fac; foundType = 'facility';
+                            break;
+                        }
+                    }
+                }
+
                 const prevSelected = this.selectedObject;
                 const prevType = this.selectedType;
                 this.selectedObject = found;
@@ -2011,6 +2077,19 @@ class Editor {
                     }
                 }
 
+                if (!foundAny && data.facilities) {
+                    // Try to delete Facility under cursor
+                    for (let i = data.facilities.length - 1; i >= 0; i--) {
+                        const fac = data.facilities[i];
+                        if (this.worldX >= fac.x && this.worldX <= fac.x + fac.width &&
+                            this.worldY >= fac.y && this.worldY <= fac.y + fac.height) {
+                            data.facilities.splice(i, 1);
+                            foundAny = true;
+                            break;
+                        }
+                    }
+                }
+
                 // If nothing else was deleted, allow resetting Spawn/Exit
                 // If nothing else was deleted, allow deleting Spawn/Exit (Nullify)
                 if (!foundAny) {
@@ -2048,6 +2127,8 @@ class Editor {
                     this.dragStart = { x: this.worldX, y: this.worldY };
                 }
             } else if (this.tool === 'trigger') {
+                this.dragStart = { x: this.worldX, y: this.worldY };
+            } else if (this.tool === 'facility') {
                 this.dragStart = { x: this.worldX, y: this.worldY };
             }
         });
@@ -2199,6 +2280,33 @@ class Editor {
                     this.updatePropertiesUI();
                 }
                 this.dragStart = null;
+            } else if (this.tool === 'facility' && this.dragStart) {
+                const w = Math.abs(this.worldX - this.dragStart.x);
+                const h = Math.abs(this.worldY - this.dragStart.y);
+                const centerX = (this.worldX + this.dragStart.x) / 2;
+                const centerY = (this.worldY + this.dragStart.y) / 2;
+
+                let fW = Math.max(w, 40);
+                let fH = Math.max(h, 40);
+
+                const newFac = {
+                    type: this.selectedFacilityType || 'heal',
+                    x: centerX - fW / 2,
+                    y: centerY - fH / 2,
+                    width: fW,
+                    height: fH,
+                    cost: 10,
+                    amount: 1
+                };
+                if (!this.game.currentLevelData.facilities) {
+                    this.game.currentLevelData.facilities = [];
+                }
+                this.game.currentLevelData.facilities.push(newFac);
+                this.selectedObject = newFac;
+                this.selectedType = 'facility';
+                this.updatePropertiesUI();
+
+                this.dragStart = null;
             }
 
             // Selection Update for property panel
@@ -2348,6 +2456,38 @@ class Editor {
                 }
             }
         }
+        // Draw Facilities
+        if (data.facilities) {
+            for (let fac of data.facilities) {
+                // Different color based on type
+                if (fac.type === 'heal') ctx.fillStyle = 'rgba(74, 239, 255, 0.4)';
+                else if (fac.type === 'player_upgrade') ctx.fillStyle = 'rgba(255, 170, 0, 0.4)';
+                else if (fac.type === 'card_upgrade') ctx.fillStyle = 'rgba(214, 102, 255, 0.4)';
+                else ctx.fillStyle = 'rgba(200, 200, 200, 0.4)';
+
+                ctx.fillRect(fac.x, fac.y, fac.width, fac.height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(fac.x, fac.y, fac.width, fac.height);
+
+                // Add text label
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Arial';
+                let label = "FACILITY";
+                if (fac.type === 'heal') label = `❤️(${fac.cost || 10}点)`;
+                if (fac.type === 'player_upgrade') label = `⚔️(${fac.cost || 10}点)`;
+                if (fac.type === 'card_upgrade') label = `🃏(${fac.cost || 10}点)`;
+                ctx.fillText(label, fac.x + 5, fac.y + 20);
+
+                if (this.selectedObject === fac) {
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(fac.x - 2, fac.y - 2, fac.width + 4, fac.height + 4);
+                    ctx.setLineDash([]);
+                }
+            }
+        }
+
         if (data.traps) {
             for (let t of data.traps) {
                 let sx = t.x;
@@ -3707,6 +3847,77 @@ class Game {
             }
         }
 
+        // Facility Interaction Logic
+        if (this.currentLevelData.facilities) {
+            for (let fac of this.currentLevelData.facilities) {
+                if (this.player.x < fac.x + fac.width &&
+                    this.player.x + this.player.width > fac.x &&
+                    this.player.y < fac.y + fac.height &&
+                    this.player.y + this.player.height > fac.y) {
+
+                    if (keys['ArrowDown'] || keys['KeyS']) {
+                        if (!fac.interactedTimer || Date.now() - fac.interactedTimer > 1000) {
+                            let cost = fac.cost !== undefined ? fac.cost : 10;
+                            let amount = fac.amount || 1;
+
+                            if (this.runManager && this.runManager.currentStats.currency >= cost) {
+                                // Purchase
+                                this.runManager.currentStats.currency -= cost;
+                                fac.interactedTimer = Date.now();
+
+                                if (fac.type === 'heal') {
+                                    this.player.hp = this.player.maxHp;
+                                    this.player.mp = this.player.maxMp;
+                                    this.spawnParticles(fac.x + fac.width / 2, fac.y, '#4aefff', 20, 8, 3, 0.5);
+                                    uiLayer.appendChild(this.createFloatingText(fac.x + fac.width / 2, fac.y, "MAX RESTORED", "#4aefff"));
+                                } else if (fac.type === 'player_upgrade') {
+                                    this.runManager.currentStats.playerLevel = (this.runManager.currentStats.playerLevel || 1) + amount;
+                                    this.player.maxHp += 20 * amount;
+                                    this.player.hp += 20 * amount;
+                                    this.player.maxMp += 20 * amount;
+                                    this.player.mp += 20 * amount;
+                                    this.spawnParticles(fac.x + fac.width / 2, fac.y, '#ffaa00', 20, 8, 3, 0.5);
+                                    uiLayer.appendChild(this.createFloatingText(fac.x + fac.width / 2, fac.y, "LEVEL UP", "#ffaa00"));
+                                } else if (fac.type === 'card_upgrade') {
+                                    if (this.runManager.currentStats.deck && this.runManager.currentStats.deck.length > 0) {
+                                        let deck = this.runManager.currentStats.deck;
+                                        let cardToUpgrade = deck[Math.floor(Math.random() * deck.length)];
+                                        cardToUpgrade.level = (cardToUpgrade.level || 1) + amount;
+                                        cardToUpgrade.value = (cardToUpgrade.value || 0) * 1.5;
+                                        this.spawnParticles(fac.x + fac.width / 2, fac.y, '#d666ff', 20, 8, 3, 0.5);
+                                        uiLayer.appendChild(this.createFloatingText(fac.x + fac.width / 2, fac.y, `UPGRADED: ${cardToUpgrade.name}`, "#d666ff"));
+                                    } else {
+                                        this.runManager.currentStats.currency += cost;
+                                        fac.interactedTimer = 0;
+                                        uiLayer.appendChild(this.createFloatingText(fac.x + fac.width / 2, fac.y, "NO CARDS", "#ff0000"));
+                                    }
+                                }
+                                document.getElementById('currency-text').textContent = this.runManager.currentStats.currency;
+                                this.camera.shake(0.2, 5);
+                            } else {
+                                if (!fac.interactedTimer || Date.now() - fac.interactedTimer > 1000) {
+                                    fac.interactedTimer = Date.now();
+                                    uiLayer.appendChild(this.createFloatingText(fac.x + fac.width / 2, fac.y, "NOT ENOUGH PTS", "#ff0000"));
+                                }
+                            }
+                        }
+                    } else {
+                        // Prompt
+                        if (!fac.promptTimer || Date.now() - fac.promptTimer > 100) {
+                            fac.promptTimer = Date.now();
+                            const pid = `fac-prompt-${Math.round(fac.x)}-${Math.round(fac.y)}`;
+                            if (!document.getElementById(pid)) {
+                                const el = this.createFloatingText(fac.x + fac.width / 2, fac.y - 20, "PRESS DOWN TO BUY", "#ffffff");
+                                el.id = pid;
+                                uiLayer.appendChild(el);
+                                // floating text auto removes itself anyway, but we set a tiny inner timeout if needed
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (this.currentLevelData.items) {
             for (let item of this.currentLevelData.items) {
                 if (!item.collected && Math.hypot(this.player.x + this.player.width / 2 - item.x, this.player.y + this.player.height / 2 - item.y) < 30) {
@@ -3999,6 +4210,99 @@ class Game {
             ctx.restore();
         }
 
+        // Draw Facilities (Game Mode - Neon Holographic Style)
+        if (this.currentLevelData.facilities) {
+            for (let fac of this.currentLevelData.facilities) {
+                const cx = fac.x + fac.width / 2;
+                const cy = fac.y + fac.height / 2;
+                const time = Date.now() / 1000;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+
+                // Color and Icon selection
+                let color = '#ffffff';
+                let icon = '';
+                if (fac.type === 'heal') { color = '#4aefff'; icon = '✚'; }
+                else if (fac.type === 'player_upgrade') { color = '#ffaa00'; icon = '⚔️'; }
+                else if (fac.type === 'card_upgrade') { color = '#d666ff'; icon = '🃏'; }
+
+                // Pulsing glow
+                ctx.shadowBlur = 15 + Math.sin(time * 3) * 10;
+                ctx.shadowColor = color;
+
+                // Draw tech base platform
+                ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-fac.width / 2 + 5, fac.height / 2);
+                ctx.lineTo(fac.width / 2 - 5, fac.height / 2);
+                ctx.lineTo(fac.width / 2 - 12, fac.height / 2 - 12);
+                ctx.lineTo(-fac.width / 2 + 12, fac.height / 2 - 12);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Holographic inner projection beam
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.15 + Math.sin(time * 5) * 0.05;
+                ctx.beginPath();
+                ctx.moveTo(-fac.width / 2 + 12, fac.height / 2 - 12);
+                ctx.lineTo(fac.width / 2 - 12, fac.height / 2 - 12);
+                ctx.lineTo(0, -fac.height / 2 - 10);
+                ctx.closePath();
+                ctx.fill();
+
+                // Floating Geometry & Icon
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1;
+                const floatOffset = Math.sin(time * 2 + fac.x) * 4;
+                ctx.translate(0, floatOffset - 15);
+
+                // Rotating neon ring
+                ctx.save();
+                ctx.rotate(time * 1.5);
+                ctx.beginPath();
+                ctx.arc(0, 0, 16, 0, Math.PI * 1.5);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Inner second ring against rotation
+                ctx.rotate(-time * 3);
+                ctx.beginPath();
+                ctx.arc(0, 0, 12, Math.PI, Math.PI * 2.5);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.restore();
+
+                // Center Icon
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // Remove shadow for clean icon text
+                ctx.shadowBlur = 0;
+                ctx.fillText(icon, 0, 0);
+
+                ctx.restore();
+
+                // Cost overlay (Stars)
+                if (fac.cost) {
+                    ctx.save();
+                    ctx.translate(cx, fac.y - 15 + Math.sin(time * 2 + fac.x) * 4);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.shadowBlur = 5;
+                    ctx.shadowColor = '#000';
+                    ctx.fillText(`⭐ ${fac.cost}`, 0, 0);
+                    ctx.restore();
+                }
+            }
+        }
+
         const goals = this.currentLevelData.goals;
         for (let g of goals) {
             if (!g.collected) {
@@ -4114,6 +4418,10 @@ class Game {
 
                 document.getElementById('hp-bar-fill').style.width = hpPercent + '%';
                 document.getElementById('mp-bar-fill').style.width = mpPercent + '%';
+
+                if (this.runManager && this.runManager.currentStats) {
+                    document.getElementById('level-text').textContent = this.runManager.currentStats.playerLevel || 1;
+                }
 
                 document.getElementById('hp-text').textContent = Math.ceil(this.player.hp) + '/' + this.player.maxHp;
                 document.getElementById('mp-text').textContent = Math.ceil(this.player.mp) + '/' + this.player.maxMp;
