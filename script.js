@@ -597,6 +597,7 @@ const cardPool = [
     new Card('dash', '时空闪烁', '允许按 Shift 冲刺 (0消耗)，距离: {v}倍', '⚡', 12, 4.0, (m, v) => { m.modifiers.extraDashes += 1; m.modifiers.dashSpeedMult = v; }),
     new Card('double_jump', '凌空虚步', '增加一次空中跳跃 (跳跃倍率: {v})', '🕊️', 15, 1.0, (m, v) => { m.modifiers.extraJumps += 1; m.modifiers.doubleJumpMult = v; }),
     new Card('wall_climb', '飞檐走壁', '贴墙缓慢滑落，按W或者空格可蹬墙跳<br>主动爬墙消耗:{v}/s(2级免费)', '🕷️', 10, 1, (m, v) => { m.modifiers.wallClimbLevel += 1; }),
+    new Card('author_power', '作者之力', '获得创造者权限！可在任意关卡自由拖动平台和陷阱位置，无需消耗 MP', '✍️', 20, 1, (m, v) => { m.modifiers.authorPower = true; }),
 ];
 
 function loadCardPoolSettings() {
@@ -650,7 +651,8 @@ class RunManager {
             extraJumps: 0,
             wallClimbLevel: 0,
             dashSpeedMult: 4.0,
-            doubleJumpMult: 1.0
+            doubleJumpMult: 1.0,
+            authorPower: false
         };
     }
 
@@ -675,7 +677,8 @@ class RunManager {
             extraJumps: 0,
             wallClimbLevel: 0,
             dashSpeedMult: 4.0,
-            doubleJumpMult: 1.0
+            doubleJumpMult: 1.0,
+            authorPower: false
         };
         console.log("Run Started!");
     }
@@ -778,8 +781,8 @@ class RunManager {
 
                     card.effect(this, card.value);
                     shopStars.textContent = this.currentStats.currency;
-                    // Disable all cards after purchase? (One card per shop)
-                    // Or just hide? Let's hide and proceed.
+                    // Update skill bar UI to reflect any newly unlocked skills
+                    if (typeof updateSkillBarUI === 'function') updateSkillBarUI();
                     this.hideShop(nextIdx);
                 }
             };
@@ -808,6 +811,88 @@ class RunManager {
     }
 }
 
+
+// ── Runtime Mouse Handlers (Play Mode + Author Power Drag) ───────────────────
+let _rtDragTarget = null;
+let _rtDragButton = -1;
+
+canvas.addEventListener('mousedown', (e) => {
+    if (game.state !== 'play') return;
+    if (e.button !== 0 && e.button !== 2) return;
+
+    const activeSlot = game.activeSkillSlot || 1;
+    const hasAuthorPower = game.runManager && game.runManager.modifiers && game.runManager.modifiers.authorPower;
+
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left) + game.camera.x;
+    const worldY = (e.clientY - rect.top) + game.camera.y;
+
+    // Slot 2 = Author Power drag mode
+    if (activeSlot == 2 && hasAuthorPower) {
+        if (e.button === 0) {
+            const pf = (game.currentLevelData.platforms || []).find(p =>
+                worldX >= p.x && worldX <= p.x + p.width &&
+                worldY >= p.y && worldY <= p.y + p.height
+            );
+            if (pf) {
+                _rtDragTarget = { obj: pf, offsetX: worldX - pf.x, offsetY: worldY - pf.y };
+                _rtDragButton = 0;
+                e.preventDefault();
+                return;
+            }
+            const tr = (game.currentLevelData.traps || []).find(t => {
+                const hw = (t.width * (t.scale || 1)) / 2;
+                const hh = (t.height * (t.scale || 1)) / 2;
+                return worldX >= t.x - hw && worldX <= t.x + hw &&
+                    worldY >= t.y - hh && worldY <= t.y + hh;
+            });
+            if (tr) {
+                _rtDragTarget = { obj: tr, offsetX: worldX - tr.x, offsetY: worldY - tr.y, isTrap: true };
+                _rtDragButton = 0;
+                e.preventDefault();
+                return;
+            }
+        }
+        return; // Author drag mode: no placement
+    }
+
+    // Default: Place platform (costs MP)
+    const cost = (game.currentLevelData.settings && game.currentLevelData.settings.platformCost) || 10;
+    if (!game.player.consumeMp(cost)) {
+        const mpBar = document.getElementById('mp-bar-fill');
+        if (mpBar) {
+            mpBar.parentElement.style.borderColor = 'red';
+            setTimeout(() => mpBar.parentElement.style.borderColor = '', 300);
+        }
+        return;
+    }
+    let bw = 100, bh = 20;
+    if (e.button === 2) { bw = 20; bh = 100; }
+    game.currentLevelData.platforms.push({ x: worldX - bw / 2, y: worldY - bh / 2, width: bw, height: bh, color: '#888' });
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (!_rtDragTarget || game.state !== 'play') return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left) + game.camera.x;
+    const worldY = (e.clientY - rect.top) + game.camera.y;
+    const o = _rtDragTarget.obj;
+    if (_rtDragTarget.isTrap) {
+        o.x = worldX - _rtDragTarget.offsetX;
+        o.y = worldY - _rtDragTarget.offsetY;
+        o.baseX = o.x; o.baseY = o.y;
+    } else {
+        o.x = worldX - _rtDragTarget.offsetX;
+        o.y = worldY - _rtDragTarget.offsetY;
+        if (o.baseX !== undefined) { o.baseX = o.x; o.startX = o.x; }
+        if (o.baseY !== undefined) { o.baseY = o.y; o.startY = o.y; }
+    }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+    if (e.button === _rtDragButton) { _rtDragTarget = null; _rtDragButton = -1; }
+});
+// ─────────────────────────────────────────────────────────────────────────────
 
 class LevelManager {
     constructor(game) {
@@ -1126,35 +1211,95 @@ canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
 });
 
-// Mouse click: place platform (costs MP)
+// Mouse interaction: place platform (costs MP) OR drag platform/trap if author_power is active
+let _authorDragTarget = null;  // { obj, offsetX, offsetY }
+let _authorDragButton = -1;
+
 canvas.addEventListener('mousedown', (e) => {
     if (game.state !== 'play') return;
-    
-    // Only handle left (0) and right (2) clicks for platform placement
     if (e.button !== 0 && e.button !== 2) return;
 
-    const cost = (game.currentLevelData.settings && game.currentLevelData.settings.platformCost) || 10;
-    if (!game.player.consumeMp(cost)) {
-        const mpBar = document.getElementById('mp-bar-fill');
-        if (mpBar) {
-            mpBar.parentElement.style.borderColor = 'red';
-            setTimeout(() => mpBar.parentElement.style.borderColor = '', 300);
-        }
-        return;
-    }
+    const activeSlot = game.activeSkillSlot || 1;
+    const hasAuthorPower = game.runManager && game.runManager.modifiers && game.runManager.modifiers.authorPower;
+
     const rect = canvas.getBoundingClientRect();
     const worldX = (e.clientX - rect.left) + game.camera.x;
     const worldY = (e.clientY - rect.top) + game.camera.y;
-    
-    // Left click: Horizontal (100x20), Right click: Vertical (20x100)
-    let bw = 100;
-    let bh = 20;
-    if (e.button === 2) {
-        bw = 20;
-        bh = 100;
+
+    // Slot 2 = Author Power drag mode (only when has authorPower AND slot is 2)
+    if (activeSlot == 2 && hasAuthorPower) {
+        if (e.button === 0) {
+            // Try to pick up a platform
+            const pf = (game.currentLevelData.platforms || []).find(p =>
+                worldX >= p.x && worldX <= p.x + p.width &&
+                worldY >= p.y && worldY <= p.y + p.height
+            );
+            if (pf) {
+                _authorDragTarget = { obj: pf, offsetX: worldX - pf.x, offsetY: worldY - pf.y };
+                _authorDragButton = 0;
+                e.preventDefault();
+                return;
+            }
+            // Try to pick up a trap
+            const tr = (game.currentLevelData.traps || []).find(t => {
+                const hw = (t.width * (t.scale || 1)) / 2;
+                const hh = (t.height * (t.scale || 1)) / 2;
+                return worldX >= t.x - hw && worldX <= t.x + hw &&
+                       worldY >= t.y - hh && worldY <= t.y + hh;
+            });
+            if (tr) {
+                _authorDragTarget = { obj: tr, offsetX: worldX - tr.x, offsetY: worldY - tr.y, isTrap: true };
+                _authorDragButton = 0;
+                e.preventDefault();
+                return;
+            }
+        }
+        return; // Author mode: no platform placement
     }
-    
-    game.currentLevelData.platforms.push({ x: worldX - bw/2, y: worldY - bh/2, width: bw, height: bh, color: '#888' });
+
+    // Default (slot 1 or any other slot): Place platform (costs MP)
+    {
+        const cost = (game.currentLevelData.settings && game.currentLevelData.settings.platformCost) || 10;
+        if (!game.player.consumeMp(cost)) {
+            const mpBar = document.getElementById('mp-bar-fill');
+            if (mpBar) {
+                mpBar.parentElement.style.borderColor = 'red';
+                setTimeout(() => mpBar.parentElement.style.borderColor = '', 300);
+            }
+            return;
+        }
+        let bw = 100;
+        let bh = 20;
+        if (e.button === 2) { bw = 20; bh = 100; }
+        game.currentLevelData.platforms.push({ x: worldX - bw/2, y: worldY - bh/2, width: bw, height: bh, color: '#888' });
+    }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (!_authorDragTarget) return;
+    if (game.state !== 'play') return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (e.clientX - rect.left) + game.camera.x;
+    const worldY = (e.clientY - rect.top) + game.camera.y;
+    const o = _authorDragTarget.obj;
+    if (_authorDragTarget.isTrap) {
+        o.x = worldX - _authorDragTarget.offsetX;
+        o.y = worldY - _authorDragTarget.offsetY;
+        o.baseX = o.x;
+        o.baseY = o.y;
+    } else {
+        o.x = worldX - _authorDragTarget.offsetX;
+        o.y = worldY - _authorDragTarget.offsetY;
+        if (o.baseX !== undefined) { o.baseX = o.x; o.startX = o.x; }
+        if (o.baseY !== undefined) { o.baseY = o.y; o.startY = o.y; }
+    }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+    if (e.button === _authorDragButton) {
+        _authorDragTarget = null;
+        _authorDragButton = -1;
+    }
 });
 
 // Shop: close without buying / skip
@@ -3178,6 +3323,7 @@ class Game {
     constructor() {
         this.state = 'play';
         this.isTesting = false;
+        this.activeSkillSlot = 1; // Default: platform placement
         this.player = new Player();
         this.levelManager = new LevelManager(this);
         this.runManager = new RunManager(this);
@@ -3291,6 +3437,17 @@ class Game {
         if (!this.currentLevelData.enemies) this.currentLevelData.enemies = [];
         if (!this.currentLevelData.triggers) this.currentLevelData.triggers = [];
         if (!this.currentLevelData.jumppads) this.currentLevelData.jumppads = [];
+        if (!this.currentLevelData.exit) {
+            // Provide a default exit if missing (backwards compatibility).
+            // Position it near the first goal if available.
+            let ex = 0;
+            let ey = 0;
+            if (this.currentLevelData.goals && this.currentLevelData.goals.length > 0) {
+                ex = this.currentLevelData.goals[0].x + 50;
+                ey = this.currentLevelData.goals[0].y;
+            }
+            this.currentLevelData.exit = { x: ex, y: ey, w: 50, h: 80, active: false };
+        }
 
         // Clear selection state in editor
         if (this.editor) {
@@ -3498,6 +3655,13 @@ class Game {
         // Apply modifiers (including wall climb) to the player
         if (this.runManager) this.runManager.applyState(this.player);
 
+        // Show skill bar and reset slot selection
+        this.activeSkillSlot = 1;
+        const skillBar = document.getElementById('skill-bar');
+        if (skillBar) skillBar.classList.remove('hidden');
+        updateSkillBarUI();
+        updateSkillBarHighlight(1);
+
         // Ensure focus
         canvas.focus();
     }
@@ -3521,6 +3685,9 @@ class Game {
         document.getElementById('btn-edit-mode').classList.remove('hidden');
         document.getElementById('btn-stop-test').classList.add('hidden');
         document.getElementById('game-stats').classList.add('hidden');
+        // Hide skill bar
+        const skillBarEl = document.getElementById('skill-bar');
+        if (skillBarEl) skillBarEl.classList.add('hidden');
 
         // Restore Level Data (undoing gameplay changes like collected goal)
         if (this.originalLevelData) {
@@ -3937,10 +4104,10 @@ class Game {
         }
 
         if (this.collectedGoals >= cond.targetCount) {
-            if (!this.currentLevelData.exit.active) {
+            if (this.currentLevelData.exit && !this.currentLevelData.exit.active) {
                 console.log("[Trigger] Goals collected! Exit activated.");
+                this.currentLevelData.exit.active = true;
             }
-            this.currentLevelData.exit.active = true;
         }
 
         const e = this.currentLevelData.exit;
@@ -4631,58 +4798,8 @@ function updateDashboard() {
     });
 }
 
-canvas.addEventListener('mousedown', (e) => {
-    // Only spawn platforms in play mode AND when NOT in the editor
-    if (game.state === 'play' && !game.editor.active) {
-        // Only handle left (0) and right (2) clicks for platform placement
-        if (e.button !== 0 && e.button !== 2) return;
 
-        const cost = game.currentLevelData.settings.platformCost || 10;
 
-        // MP Check
-        if (game.player.consumeMp(cost)) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-
-            const worldX = mx + game.camera.x;
-            const worldY = my + game.camera.y;
-
-            // Simple overlap check to prevent wasting MP on invalid placements?
-            // For now, let's just place it. Overlap check should arguably happen before MP use, 
-            // but the current simple logic doesn't have overlap check here (it was added to standalone but not here??)
-            // Wait, looking at previous context, I see I added overlap check to STANDALONE but maybe not here?
-            // actually, let's align them.
-
-            // Left click: Horizontal (100x20), Right click: Vertical (20x100)
-            let bw = 100;
-            let bh = 20;
-            if (e.button === 2) {
-                bw = 20;
-                bh = 100;
-            }
-
-            game.currentLevelData.platforms.push({
-                x: worldX - bw / 2,
-                y: worldY - bh / 2,
-                width: bw,
-                height: bh,
-                color: '#888'
-            });
-
-            // Visual/Audio cue for success?
-        } else {
-            // Not enough MP
-            console.log("Not enough MP!");
-            // Optional: Visual cue (flash MP bar red?)
-            const mpBar = document.getElementById('mp-bar-fill');
-            if (mpBar) {
-                mpBar.parentElement.style.borderColor = 'red';
-                setTimeout(() => mpBar.parentElement.style.borderColor = 'rgba(255, 255, 255, 0.2)', 200);
-            }
-        }
-    }
-});
 
 // Initialize Dashboard UI after game is fully constructed and inject AI levels
 if (typeof window.IS_STANDALONE === 'undefined' || !window.IS_STANDALONE) {
@@ -4766,5 +4883,66 @@ if (typeof window.IS_STANDALONE === 'undefined' || !window.IS_STANDALONE) {
             game.levelManager.saveToStorage();
         }
         updateDashboard();
+    }
+}
+
+// ── Skill Bar Helpers ──────────────────────────────────────────────────────
+
+function updateSkillBarHighlight(slot) {
+    for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById('skill-slot-' + i);
+        if (el) el.classList.toggle('active', i === slot);
+    }
+}
+
+function selectSkillSlot(slot) {
+    // Check modifiers to decide if a slot is unlocked (don't rely on DOM class)
+    if (slot === 1) {
+        // Slot 1 is always available
+    } else if (slot === 2) {
+        // Slot 2 requires author_power
+        const hasAuthorPower = typeof game !== 'undefined' &&
+            game.runManager && game.runManager.modifiers && game.runManager.modifiers.authorPower;
+        if (!hasAuthorPower) return;
+    } else {
+        // Slots 3-4 are not yet implemented
+        return;
+    }
+    game.activeSkillSlot = slot;
+    updateSkillBarHighlight(slot);
+    console.log('[SkillBar] Switched to slot', slot, '| activeSkillSlot =', game.activeSkillSlot);
+}
+
+// Keyboard 1-4 to switch skill slots (only during play)
+window.addEventListener('keydown', (e) => {
+    if (game.state !== 'play') return;
+    if (e.code === 'Digit1') selectSkillSlot(1);
+    else if (e.code === 'Digit2') selectSkillSlot(2);
+    else if (e.code === 'Digit3') selectSkillSlot(3);
+    else if (e.code === 'Digit4') selectSkillSlot(4);
+});
+
+// Click on skill slot divs
+for (let i = 1; i <= 4; i++) {
+    const slotEl = document.getElementById('skill-slot-' + i);
+    if (slotEl) {
+        slotEl.addEventListener('click', () => selectSkillSlot(i));
+    }
+}
+
+// Sync skill bar icons to reflect owned modifiers (called after card purchase / level load)
+function updateSkillBarUI() {
+    const hasAuthorPower = typeof game !== 'undefined' &&
+        game.runManager && game.runManager.modifiers && game.runManager.modifiers.authorPower;
+    const slot2 = document.getElementById('skill-slot-2');
+    if (!slot2) return;
+    if (hasAuthorPower) {
+        slot2.classList.remove('empty');
+        slot2.querySelector('.slot-icon').textContent = '\u270d\ufe0f';
+        slot2.querySelector('.slot-name').textContent = '\u4f5c\u8005';
+    } else {
+        slot2.classList.add('empty');
+        slot2.querySelector('.slot-icon').textContent = '\u2014';
+        slot2.querySelector('.slot-name').textContent = '\u7a7a';
     }
 }

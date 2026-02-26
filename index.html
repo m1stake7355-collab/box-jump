@@ -608,6 +608,60 @@
             background: #357abd;
         }
 
+        /* --- Play Mode Skill Bar --- */
+        #skill-bar {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 200;
+            pointer-events: auto;
+        }
+        #skill-bar.hidden { display: none; }
+        .skill-slot {
+            width: 56px;
+            height: 56px;
+            background: rgba(10, 10, 20, 0.85);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            backdrop-filter: blur(8px);
+        }
+        .skill-slot.active {
+            border-color: #4a9eff;
+            box-shadow: 0 0 14px rgba(74,158,255,0.6);
+        }
+        .skill-slot .slot-icon {
+            font-size: 26px;
+            line-height: 1;
+        }
+        .skill-slot .slot-key {
+            position: absolute;
+            top: 3px;
+            left: 5px;
+            font-size: 10px;
+            color: rgba(255,255,255,0.5);
+            font-weight: bold;
+        }
+        .skill-slot .slot-name {
+            font-size: 9px;
+            color: rgba(255,255,255,0.55);
+            margin-top: 2px;
+            max-width: 52px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .skill-slot.empty .slot-icon { opacity: 0.2; }
+
         /* --- Editor Database Bar (Multi-Category Refined) --- */
         #btn-expand-db {
             position: fixed;
@@ -1255,6 +1309,30 @@
                 <h1>关卡完成!</h1>
                 <button id="btn-win-next">下一关</button>
                 <button id="btn-restart">重新开始</button>
+            </div>
+
+            <!-- Skill Bar (shown during play / test) -->
+            <div id="skill-bar" class="hidden">
+                <div class="skill-slot active" id="skill-slot-1" data-slot="1">
+                    <span class="slot-key">1</span>
+                    <span class="slot-icon">🧱</span>
+                    <span class="slot-name">放置</span>
+                </div>
+                <div class="skill-slot empty" id="skill-slot-2" data-slot="2">
+                    <span class="slot-key">2</span>
+                    <span class="slot-icon">—</span>
+                    <span class="slot-name">空</span>
+                </div>
+                <div class="skill-slot empty" id="skill-slot-3" data-slot="3">
+                    <span class="slot-key">3</span>
+                    <span class="slot-icon">—</span>
+                    <span class="slot-name">空</span>
+                </div>
+                <div class="skill-slot empty" id="skill-slot-4" data-slot="4">
+                    <span class="slot-key">4</span>
+                    <span class="slot-icon">—</span>
+                    <span class="slot-name">空</span>
+                </div>
             </div>
         </div>
     </div>
